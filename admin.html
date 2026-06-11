@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OBS Music TV - Admin</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{min-height:100vh;background:radial-gradient(circle at top,#252525,#070707 70%);color:#fff;font-family:Arial,Helvetica,sans-serif;padding:18px}
+.wrap{max-width:1100px;margin:auto;display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.head,.full{grid-column:1/-1}
+.head,.card{background:#141414;border:1px solid #333;border-radius:18px;padding:16px}
+.head{text-align:center}.head h1{color:#ffcc00;margin-bottom:6px}
+textarea,input{width:100%;background:#080808;color:#fff;border:1px solid #333;border-radius:12px;padding:10px;margin-bottom:10px}
+textarea{min-height:165px;resize:vertical}
+button{width:100%;border:0;border-radius:12px;padding:12px;margin-bottom:8px;color:#fff;font-weight:bold;cursor:pointer;background:linear-gradient(135deg,#ff003c,#ff7a00)}
+.ok{background:linear-gradient(135deg,#00b894,#00cec9)}.warn{background:linear-gradient(135deg,#f39c12,#e67e22)}.bad{background:linear-gradient(135deg,#c0392b,#e74c3c)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.status{font-size:13px;color:#ffcc00;line-height:1.35;background:#080808;border:1px solid #333;border-radius:12px;padding:10px}
+.small{font-size:12px;color:#aaa;line-height:1.4;margin-bottom:8px}
+@media(max-width:850px){.wrap{grid-template-columns:1fr}.head,.full{grid-column:auto}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="head"><h1>Panel OBS Music TV</h1><p>Control y generador de config.json</p></div>
+<div class="card"><h2>🎵 Videos musicales</h2><p class="small">Un video por línea. Ejemplo: music/video1.mp4</p><textarea id="musicList">music/video1.mp4
+music/video2.mp4</textarea><button class="ok" onclick="copyConfig()">Generar / copiar config.json</button></div>
+<div class="card"><h2>📢 Anuncios</h2><p class="small">Un anuncio por línea.</p><textarea id="adList">ads/anuncio1.mp4
+ads/anuncio2.mp4</textarea><label>Cada cuánto mostrar anuncios, en minutos:</label><input id="interval" type="number" min="1" value="5"><div class="two"><button class="ok" onclick="send({type:'play'})">▶ Play</button><button class="warn" onclick="send({type:'pause'})">⏸ Pause</button></div><div class="two"><button class="warn" onclick="send({type:'adsNow'})">Anuncios ahora</button><button class="ok" onclick="send({type:'next'})">Siguiente</button></div><button class="warn" onclick="send({type:'unlock'})">🔊 Activar audio</button><button class="bad" onclick="send({type:'reload'})">🔄 Recargar player</button></div>
+<div class="card"><h2>🧾 Barra inferior</h2><textarea id="ticker">Bienvenidos a la transmisión musical | Pide tu canción favorita</textarea><div class="two"><button class="warn" onclick="sendTicker()">Mostrar barra</button><button class="bad" onclick="send({type:'hideTicker'})">Ocultar barra</button></div><div class="status" id="status">Estado: esperando reproductor.</div></div>
+<div class="card"><h2>⚙️ Opciones</h2><label><input id="repeat" type="checkbox" checked> Repetir lista</label><br><label><input id="random" type="checkbox"> Aleatorio</label><br><label><input id="autoplay" type="checkbox" checked> Autoplay</label><br><label><input id="showTicker" type="checkbox"> Mostrar barra al iniciar</label><br><label><input id="showBadge" type="checkbox" checked> Mostrar PUBLICIDAD</label></div>
+<div class="full card"><h2>📌 Cómo usar</h2><div class="status">Sube videos a music/ y ads/. Edita config.json. Abre player.html en OBS y admin.html para controlar.</div></div>
+</div>
+<script>
+const CHANNEL='obs_music_tv_github_channel_v1';
+let bc=null;try{bc=new BroadcastChannel(CHANNEL)}catch(e){}
+function send(msg){if(bc)bc.postMessage(msg)}
+function sendTicker(){send({type:'ticker',text:document.getElementById('ticker').value})}
+function lines(id){return document.getElementById(id).value.split(/\r?\n/).map(x=>x.trim()).filter(Boolean)}
+function titleFrom(src){return src.split('/').pop().replace(/\.[^.]+$/,'')}
+function buildConfig(){return{settings:{autoplay:document.getElementById('autoplay').checked,repeat:document.getElementById('repeat').checked,random:document.getElementById('random').checked,adIntervalMinutes:Number(document.getElementById('interval').value)||5,showAdBadge:document.getElementById('showBadge').checked,showTicker:document.getElementById('showTicker').checked,tickerText:document.getElementById('ticker').value,videoFit:'contain'},music:lines('musicList').map(src=>({title:titleFrom(src),src})),ads:lines('adList').map(src=>({title:titleFrom(src),src}))}}
+async function copyConfig(){const txt=JSON.stringify(buildConfig(),null,2);try{await navigator.clipboard.writeText(txt);alert('config.json copiado. Pégalo en tu repositorio.')}catch(e){const blob=new Blob([txt],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='config.json';a.click();URL.revokeObjectURL(url)}}
+if(bc){bc.onmessage=e=>{const d=e.data||{};if(d.type==='status'){document.getElementById('status').textContent='Estado: '+(d.mode==='ads'?'PUBLICIDAD':'MÚSICA')+' | Música: '+d.musicCount+' | Anuncios: '+d.adCount+' | Actual: '+(d.currentMusic||d.currentAd||'')+(d.error?' | '+d.error:'')}}}
+</script>
+</body>
+</html>
