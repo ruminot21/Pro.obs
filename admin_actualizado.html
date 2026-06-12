@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>OBS Admin - Panel Independiente</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{min-height:100%;background:#0b0b0f;color:#fff;font-family:Arial,Helvetica,sans-serif}
+body{padding:18px}
+.container{max-width:1180px;margin:auto}
+.header{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:16px;padding:18px;border:1px solid #2b2b35;border-radius:24px;background:linear-gradient(135deg,#15151d,#09090d)}
+.header h1{font-size:26px;color:#ffcc00}.header p{color:#aaa;margin-top:4px}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.card{background:#14141b;border:1px solid #2b2b35;border-radius:22px;padding:16px;box-shadow:0 14px 40px rgba(0,0,0,.18)}
+.card h2{font-size:18px;margin-bottom:12px;color:#ffcc00}
+label{display:block;color:#ddd;font-size:13px;margin:10px 0 6px}
+input,textarea,select{width:100%;background:#08080c;color:#fff;border:1px solid #333544;border-radius:14px;padding:12px;outline:none}
+textarea{height:82px;resize:vertical}
+button{border:0;border-radius:14px;padding:12px 14px;margin:5px 0;color:#fff;font-weight:900;cursor:pointer;background:linear-gradient(135deg,#ff003c,#ff7a00)}
+button:hover{opacity:.94}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.row3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.ok{background:linear-gradient(135deg,#00b894,#00cec9)}
+.warn{background:linear-gradient(135deg,#f39c12,#e67e22)}
+.bad{background:linear-gradient(135deg,#c0392b,#e74c3c)}
+.off{background:#2b2b35}
+.info{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0}
+.box{background:#08080c;border:1px solid #333544;border-radius:14px;padding:11px;color:#aaa;font-size:13px}
+.box strong{display:block;color:#ffcc00;margin-top:5px;font-size:16px}
+.folderName{display:block;color:#00cec9;font-size:11px;margin-top:4px;opacity:.95}
+#adminCountdown{font-size:28px;color:#00cec9;text-shadow:0 0 18px rgba(0,206,201,.25)}
+ul{list-style:none;max-height:265px;overflow:auto;margin-top:10px}
+li{display:grid;grid-template-columns:1fr auto;gap:10px;padding:10px;border-radius:14px;background:#09090d;border:1px solid #333544;margin-bottom:8px;color:#ddd;font-size:13px}
+li.active{background:linear-gradient(135deg,rgba(255,0,60,.35),rgba(255,122,0,.25));color:#fff}
+.dur{color:#ffcc00;font-weight:900;white-space:nowrap}
+.status{padding:12px;background:#08080c;border:1px solid #333544;border-radius:14px;color:#ffcc00;line-height:1.35;font-size:13px;margin-top:10px}
+.small{font-size:12px;color:#aaa;line-height:1.5}
+.full{grid-column:1/-1}
+@media(max-width:850px){.grid{grid-template-columns:1fr}.header{display:block}.row,.row3{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <div>
+      <h1>OBS Music Channel Pro - Panel</h1>
+      <p>Panel independiente. En OBS debes usar solo <b>player.html</b>.</p>
+    </div>
+    <button class="ok" onclick="send('reload')">Conectar / Recargar Player</button>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>🎵 Videos musicales</h2>
+      <label>Selecciona videos musicales locales</label>
+      <input id="musicInput" type="file" accept="video/*" multiple>
+      <button onclick="loadFiles('music')">Cargar música al sistema</button>
+      <label>O carga una carpeta completa de música</label>
+      <input id="musicFolderInput" type="file" accept="video/*" multiple webkitdirectory directory>
+      <button class="ok" onclick="loadFiles('music','folder')">📁 Cargar carpeta de música</button>
+      <div class="info"><div class="box">Cantidad<strong id="musicCount">0</strong></div><div class="box">Duración total<strong id="musicTotal">00:00</strong></div></div>
+      <div class="row">
+        <button class="ok" onclick="send('play')">▶ Reproducir</button>
+        <button class="warn" onclick="send('next')">Siguiente</button>
+      </div>
+      <div class="row">
+        <button id="randomBtn" class="off" onclick="toggle('random')">Aleatorio: OFF</button>
+        <button id="repeatBtn" class="ok" onclick="toggle('repeat')">Repetir: ON</button>
+      </div>
+      <button class="warn" onclick="shuffleMusicList()">🔀 Barajar lista de videos</button>
+      <ul id="musicList"></ul>
+    </div>
+
+    <div class="card">
+      <h2>📢 Anuncios</h2>
+      <label>Selecciona videos de publicidad locales</label>
+      <input id="adsInput" type="file" accept="video/*" multiple>
+      <button onclick="loadFiles('ads')">Cargar anuncios al sistema</button>
+      <label>O carga una carpeta completa de anuncios</label>
+      <input id="adsFolderInput" type="file" accept="video/*" multiple webkitdirectory directory>
+      <button class="ok" onclick="loadFiles('ads','folder')">📁 Cargar carpeta de anuncios</button>
+      <div class="info"><div class="box">Cantidad<strong id="adsCount">0</strong></div><div class="box">Duración bloque<strong id="adsTotal">00:00</strong></div></div>
+      <div class="info"><div class="box">Próxima publicidad<strong id="adminCountdown">--:--</strong></div><div class="box">Estado del tiempo<strong id="timerState">Detenido</strong></div></div>
+      <label>Cada cuántos minutos mostrar anuncios</label>
+      <input id="adMinutes" type="number" min="1" value="5" onchange="setAdMinutes()">
+      <div class="row">
+        <button class="ok" onclick="startTimer()">Activar tiempo</button>
+        <button class="bad" onclick="send('timerStop')">Detener tiempo</button>
+      </div>
+      <button class="warn" onclick="send('adsNow')">Mostrar anuncios ahora</button>
+      <ul id="adsList"></ul>
+    </div>
+
+    <div class="card">
+      <h2>⚙️ Controles del reproductor</h2>
+      <div class="row3">
+        <button class="ok" onclick="send('play')">Play</button>
+        <button class="warn" onclick="send('pause')">Pausa</button>
+        <button class="bad" onclick="clearAll()">Limpiar</button>
+      </div>
+      <label>Ajuste del video</label>
+      <select id="fit" onchange="setFit()">
+        <option value="cover">Pantalla completa, recorta bordes</option>
+        <option value="contain">Mostrar completo, con bordes negros</option>
+      </select>
+      <div class="status" id="status">Estado: listo. Abre player.html en OBS y este panel en otra ventana.</div>
+    </div>
+
+    <div class="card">
+      <h2>🧾 Barra inferior</h2>
+      <label>Texto de barra</label>
+      <textarea id="tickerInput">Bienvenidos a la transmisión musical | Pide tu canción favorita</textarea>
+      <div class="row">
+        <button class="warn" onclick="showTicker()">Mostrar barra</button>
+        <button class="bad" onclick="hideTicker()">Ocultar barra</button>
+      </div>
+      <p class="small">La barra se muestra únicamente en el reproductor. El panel nunca aparece en OBS.</p>
+    </div>
+
+    <div class="card full">
+      <h2>✅ Uso recomendado</h2>
+      <p class="small">
+        1) Abre <b>admin.html</b> en el navegador y carga música/anuncios.<br>
+        2) Abre <b>player.html</b> en OBS como fuente de navegador local.<br>
+        3) Si el navegador bloquea audio, abre player.html una vez y presiona iniciar. En OBS también puedes activar el control de audio de la fuente.
+      </p>
+    </div>
+  </div>
+</div>
+
+<script>
+const DB_NAME='OBS_MUSIC_CHANNEL_DB_V2';
+const STORE='files';
+const STATE_KEY='OBS_MUSIC_CHANNEL_STATE_V2';
+const COMMAND_KEY='OBS_MUSIC_CHANNEL_COMMAND_V2';
+const TIMER_KEY='OBS_MUSIC_CHANNEL_TIMER_V2';
+const bc=('BroadcastChannel' in window)?new BroadcastChannel('OBS_MUSIC_CHANNEL_CHANNEL_V2'):null;
+let state={music:[],ads:[],musicIndex:0,adIndex:0,repeat:true,random:false,fit:'cover',tickerText:'Bienvenidos a la transmisión musical | Pide tu canción favorita',tickerVisible:false,adMinutes:5};
+
+function openDB(){return new Promise((res,rej)=>{const r=indexedDB.open(DB_NAME,1);r.onupgradeneeded=()=>{const db=r.result;if(!db.objectStoreNames.contains(STORE))db.createObjectStore(STORE,{keyPath:'id'})};r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})}
+function saveFile(record){return openDB().then(db=>new Promise((res,rej)=>{const tx=db.transaction(STORE,'readwrite');tx.objectStore(STORE).put(record);tx.oncomplete=()=>{db.close();res()};tx.onerror=()=>rej(tx.error)}))}
+function clearDB(){return openDB().then(db=>new Promise((res,rej)=>{const tx=db.transaction(STORE,'readwrite');tx.objectStore(STORE).clear();tx.oncomplete=()=>{db.close();res()};tx.onerror=()=>rej(tx.error)}))}
+function readState(){try{state={...state,...JSON.parse(localStorage.getItem(STATE_KEY)||'{}')}}catch(e){}}
+function saveState(){localStorage.setItem(STATE_KEY,JSON.stringify(state));render()}
+function send(type){const cmd={type,ts:Date.now()};localStorage.setItem(COMMAND_KEY,JSON.stringify(cmd));if(bc)bc.postMessage(cmd);setStatus('Comando enviado: '+type)}
+function setStatus(t){document.getElementById('status').textContent='Estado: '+t}
+function fmt(s){if(!s||!isFinite(s))return'00:00';let h=Math.floor(s/3600),m=Math.floor((s%3600)/60),x=Math.floor(s%60);return h?`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(x).padStart(2,'0')}`:`${String(m).padStart(2,'0')}:${String(x).padStart(2,'0')}`}
+function getDuration(file){return new Promise(r=>{let v=document.createElement('video'),u=URL.createObjectURL(file);v.preload='metadata';v.src=u;v.onloadedmetadata=()=>{let d=v.duration||0;URL.revokeObjectURL(u);r(d)};v.onerror=()=>{URL.revokeObjectURL(u);r(0)}})}
+async function loadFiles(type,mode='files'){
+  const inputId=type==='music'?(mode==='folder'?'musicFolderInput':'musicInput'):(mode==='folder'?'adsFolderInput':'adsInput');
+  const input=document.getElementById(inputId);
+  const files=Array.from(input.files||[]).filter(f=>f.type.startsWith('video/'));
+  if(!files.length){alert(mode==='folder'?'Selecciona una carpeta con videos primero.':'Selecciona archivos primero.');return}
+  setStatus('Cargando '+files.length+' video(s)...');
+  const list=[];
+  for(let i=0;i<files.length;i++){
+    const file=files[i], id=type+'_'+Date.now()+'_'+i+'_'+Math.random().toString(36).slice(2);
+    const duration=await getDuration(file);
+    const relative=file.webkitRelativePath||file.name;
+    const parts=relative.split('/');
+    const folder=parts.length>1?parts.slice(0,-1).join('/'):'';
+    await saveFile({id,name:file.name,type,blob:file,duration,createdAt:Date.now(),folder,relativePath:relative});
+    list.push({id,name:file.name,duration,folder,relativePath:relative});
+  }
+  if(type==='music'){state.music=list;state.musicIndex=0}else{state.ads=list;state.adIndex=0}
+  saveState(); send('reload'); setStatus((mode==='folder'?'Carpeta cargada':'Archivos cargados')+' correctamente.');
+}
+function total(a){return a.reduce((s,x)=>s+(Number(x.duration)||0),0)}
+function render(){
+  document.getElementById('musicCount').textContent=state.music.length;
+  document.getElementById('musicTotal').textContent=fmt(total(state.music));
+  document.getElementById('adsCount').textContent=state.ads.length;
+  document.getElementById('adsTotal').textContent=fmt(total(state.ads));
+  document.getElementById('randomBtn').textContent=state.random?'Aleatorio: ON':'Aleatorio: OFF';
+  document.getElementById('randomBtn').className=state.random?'ok':'off';
+  document.getElementById('repeatBtn').textContent=state.repeat?'Repetir: ON':'Repetir: OFF';
+  document.getElementById('repeatBtn').className=state.repeat?'ok':'off';
+  document.getElementById('fit').value=state.fit||'cover';
+  document.getElementById('adMinutes').value=state.adMinutes||5;
+  document.getElementById('tickerInput').value=state.tickerText||'';
+  const ml=document.getElementById('musicList'); ml.innerHTML='';
+  state.music.forEach((x,i)=>{const li=document.createElement('li');li.className=i===state.musicIndex?'active':'';li.innerHTML='<span>'+(i+1)+'. '+x.name+(x.folder?'<span class="folderName">📁 '+x.folder+'</span>':'')+'</span><span class="dur">'+fmt(x.duration)+'</span>';li.onclick=()=>{state.musicIndex=i;saveState();send('play')};ml.appendChild(li)});
+  const al=document.getElementById('adsList'); al.innerHTML='';
+  state.ads.forEach((x,i)=>{const li=document.createElement('li');li.innerHTML='<span>'+(i+1)+'. '+x.name+(x.folder?'<span class="folderName">📁 '+x.folder+'</span>':'')+'</span><span class="dur">'+fmt(x.duration)+'</span>';al.appendChild(li)});
+}
+function toggle(k){state[k]=!state[k];saveState();send('reload')}
+function shuffleArray(arr){
+  for(let i=arr.length-1;i>0;i--){
+    const j=Math.floor(Math.random()*(i+1));
+    [arr[i],arr[j]]=[arr[j],arr[i]];
+  }
+  return arr;
+}
+function shuffleMusicList(){
+  if(!state.music.length){alert('Primero carga videos musicales.');return}
+  const current=state.music[state.musicIndex];
+  state.music=shuffleArray([...state.music]);
+  state.musicIndex=current?Math.max(0,state.music.findIndex(x=>x.id===current.id)):0;
+  saveState();
+  send('shuffle');
+  setStatus('Lista de videos barajada correctamente.');
+}
+function setFit(){state.fit=document.getElementById('fit').value;saveState();send('fit')}
+function setAdMinutes(){state.adMinutes=Number(document.getElementById('adMinutes').value)||5;saveState()}
+function startTimer(){setAdMinutes();send('timerStart')}
+function showTicker(){state.tickerText=document.getElementById('tickerInput').value||'';state.tickerVisible=true;saveState();send('ticker')}
+function hideTicker(){state.tickerVisible=false;saveState();send('ticker')}
+async function clearAll(){
+  if(!confirm('¿Limpiar música, anuncios y configuración?'))return;
+  await clearDB(); localStorage.removeItem(STATE_KEY);
+  state={music:[],ads:[],musicIndex:0,adIndex:0,repeat:true,random:false,fit:'cover',tickerText:'',tickerVisible:false,adMinutes:5};
+  saveState(); send('clear'); setStatus('Sistema limpio.');
+}
+
+function updateAdminCountdown(){
+  let data=null;
+  try{data=JSON.parse(localStorage.getItem(TIMER_KEY)||'{}')}catch(e){}
+  const countdownEl=document.getElementById('adminCountdown');
+  const timerStateEl=document.getElementById('timerState');
+  if(!countdownEl||!timerStateEl)return;
+  if(!data||!data.active){countdownEl.textContent='--:--';timerStateEl.textContent='Detenido';return}
+  if(data.isAd){countdownEl.textContent='EN PUBLICIDAD';timerStateEl.textContent='Anuncios';return}
+  countdownEl.textContent=fmt(Number(data.remaining||0));
+  timerStateEl.textContent='Activo';
+}
+window.addEventListener('storage',e=>{if(e.key===TIMER_KEY)updateAdminCountdown()});
+setInterval(updateAdminCountdown,1000);
+
+readState(); saveState(); render(); updateAdminCountdown();
+</script>
+</body>
+</html>
