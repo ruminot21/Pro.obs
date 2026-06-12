@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>OBS Player - Solo Reproductor</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:100%;height:100%;background:#000;overflow:hidden;font-family:Arial,Helvetica,sans-serif;color:#fff}
+#stage{position:fixed;inset:0;background:#000}
+video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000}
+#musicVideo{z-index:1;display:block}
+#adVideo{z-index:3;display:none}
+#badge{position:absolute;top:24px;left:24px;z-index:8;display:none;padding:10px 18px;border-radius:999px;background:#ffcc00;color:#111;font-weight:900;letter-spacing:.5px}
+#ticker{position:absolute;left:0;right:0;bottom:0;height:48px;z-index:9;display:none;align-items:center;overflow:hidden;background:#ffcc00;color:#111;font-weight:900;font-size:20px}
+#ticker span{white-space:nowrap;padding-left:100%;animation:tickerMove 18s linear infinite}
+@keyframes tickerMove{to{transform:translateX(-100%)}}
+#overlay{position:absolute;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;background:#000;color:#ffcc00;text-align:center;padding:30px}
+#overlay.hide{display:none}
+#overlay .box{max-width:760px;border:1px solid #333;background:#080808;border-radius:22px;padding:28px;box-shadow:0 0 60px #000}
+#overlay h1{font-size:30px;margin-bottom:12px}
+#overlay p{color:#ddd;line-height:1.5;margin-bottom:18px}
+#overlay button{border:0;border-radius:999px;padding:14px 26px;background:#ffcc00;color:#111;font-weight:900;cursor:pointer}
+#status{position:absolute;left:12px;bottom:12px;z-index:21;display:none;color:#ffcc00;background:rgba(0,0,0,.55);padding:8px 12px;border-radius:10px;font-size:13px}
+</style>
+</head>
+<body>
+<div id="stage">
+  <video id="musicVideo" playsinline preload="auto"></video>
+  <video id="adVideo" playsinline preload="auto"></video>
+  <div id="badge">PUBLICIDAD</div>
+  <div id="ticker"><span id="tickerText"></span></div>
+  <div id="overlay">
+    <div class="box">
+      <h1>OBS Player listo</h1>
+      <p>Este archivo es solo el reproductor. Carga videos y controla todo desde <b>admin.html</b>. Para navegador normal, presiona iniciar una vez para desbloquear audio.</p>
+      <button onclick="startFromGesture()">▶ Iniciar reproductor</button>
+    </div>
+  </div>
+  <div id="status"></div>
+</div>
+
+<script>
+const DB_NAME='OBS_MUSIC_CHANNEL_DB_V2';
+const STORE='files';
+const STATE_KEY='OBS_MUSIC_CHANNEL_STATE_V2';
+const COMMAND_KEY='OBS_MUSIC_CHANNEL_COMMAND_V2';
+const TIMER_KEY='OBS_MUSIC_CHANNEL_TIMER_V2';
+const bc=('BroadcastChannel' in window)?new BroadcastChannel('OBS_MUSIC_CHANNEL_CHANNEL_V2'):null;
+
+const mv=document.getElementById('musicVideo');
+const av=document.getElementById('adVideo');
+const overlay=document.getElementById('overlay');
+const badge=document.getElementById('badge');
+const ticker=document.getElementById('ticker');
+const tickerText=document.getElementById('tickerText');
+const statusEl=document.getElementById('status');
+
+let state={music:[],ads:[],musicIndex:0,adIndex:0,repeat:true,random:false,fit:'cover',tickerText:'',tickerVisible:false,adMinutes:5};
+let urls=new Map(), isAd=false, playing=false, audioUnlocked=false, adTimer=null, countdownTimer=null, timerStarted=false, adRemaining=0;
+
+function log(t){statusEl.textContent=t; console.log('[PLAYER]',t)}
+function fmt(s){if(!s||!isFinite(s))return'00:00';let h=Math.floor(s/3600),m=Math.floor((s%3600)/60),x=Math.floor(s%60);return h?`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(x).padStart(2,'0')}`:`${String(m).padStart(2,'0')}:${String(x).padStart(2,'0')}`}
+function publishTimerStatus(active=timerStarted){
+  const data={active:!!active,remaining:Math.max(0,adRemaining||0),isAd:!!isAd,adMinutes:Number(state.adMinutes||5),ts:Date.now()};
+  localStorage.setItem(TIMER_KEY,JSON.stringify(data));
+}
+function openDB(){return new Promise((res,rej)=>{const r=indexedDB.open(DB_NAME,1);r.onupgradeneeded=()=>{const db=r.result;if(!db.objectStoreNames.contains(STORE))db.createObjectStore(STORE,{keyPath:'id'})};r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})}
+async function getFile(id){const db=await openDB();return new Promise((res,rej)=>{const tx=db.transaction(STORE,'readonly');const rq=tx.objectStore(STORE).get(id);rq.onsuccess=()=>res(rq.result);rq.onerror=()=>rej(rq.error);tx.oncomplete=()=>db.close()})}
+async function urlFor(id){if(urls.has(id))return urls.get(id);const item=await getFile(id);if(!item||!item.blob)throw new Error('No existe el archivo: '+id);const u=URL.createObjectURL(item.blob);urls.set(id,u);return u}
+function readState(){try{state={...state,...JSON.parse(localStorage.getItem(STATE_KEY)||'{}')}}catch(e){} applyStateVisuals()}
+function saveState(){localStorage.setItem(STATE_KEY,JSON.stringify(state))}
+function applyStateVisuals(){mv.style.objectFit=state.fit||'cover';av.style.objectFit=state.fit||'cover';tickerText.textContent=state.tickerText||'';ticker.style.display=state.tickerVisible?'flex':'none'}
+async function safePlay(v){
+  try{
+    v.muted=!audioUnlocked;
+    await v.play();
+    playing=true;
+    overlay.classList.add('hide');
+    log(audioUnlocked?'Reproduciendo con audio':'Reproduciendo silenciado. Click en el player para audio.');
+  }catch(e){
+    playing=false;
+    overlay.classList.remove('hide');
+    log('Autoplay bloqueado: presiona iniciar en el reproductor.');
+  }
+}
+async function playMusic(i,keepTime=0){
+  readState();
+  if(!state.music.length)return log('No hay música cargada.');
+  if(i<0||i>=state.music.length)i=0;
+  isAd=false; state.musicIndex=i; saveState();
+  av.pause(); av.removeAttribute('src'); av.load(); av.style.display='none'; badge.style.display='none';
+  mv.style.display='block';
+  const item=state.music[i];
+  mv.src=await urlFor(item.id); mv.load();
+  mv.onloadedmetadata=()=>{if(keepTime && keepTime<mv.duration)mv.currentTime=keepTime; safePlay(mv)};
+  mv.onerror=()=>{log('Error de música. Saltando.'); nextMusic()};
+}
+function nextMusicIndex(){
+  if(!state.music.length)return -1;
+  if(state.random && state.music.length>1){let n;do{n=Math.floor(Math.random()*state.music.length)}while(n===state.musicIndex);return n}
+  if(state.musicIndex<state.music.length-1)return state.musicIndex+1;
+  return state.repeat?0:-1;
+}
+function nextMusic(){readState();const n=nextMusicIndex(); if(n<0){playing=false; mv.pause(); log('Lista terminada.'); return} playMusic(n)}
+mv.onended=nextMusic;
+
+async function startAds(){
+  readState();
+  if(isAd || !state.ads.length)return;
+  isAd=true; state.adIndex=0; saveState();
+  publishTimerStatus(true);
+  mv.pause(); mv.style.display='none'; av.style.display='block'; badge.style.display='block';
+  playAd();
+}
+async function playAd(){
+  readState();
+  if(!isAd)return;
+  if(state.adIndex>=state.ads.length){finishAds();return}
+  const item=state.ads[state.adIndex];
+  av.src=await urlFor(item.id); av.load();
+  av.onloadedmetadata=()=>safePlay(av);
+  av.onended=()=>{state.adIndex++;saveState();playAd()};
+  av.onerror=()=>{state.adIndex++;saveState();playAd()};
+}
+function finishAds(){
+  isAd=false; av.pause(); av.removeAttribute('src'); av.load(); av.style.display='none'; badge.style.display='none'; mv.style.display='block';
+  if(mv.src) safePlay(mv); else playMusic(state.musicIndex||0);
+  if(timerStarted){adRemaining=(Number(state.adMinutes||5))*60; updateCountdown(); publishTimerStatus(true);}
+}
+function updateCountdown(){
+  if(!timerStarted || !state.ads.length || !state.music.length || isAd){
+      return;
+  }
+  publishTimerStatus(true);
+}
+function startAdTimer(){
+  stopAdTimer();
+  readState();
+  const m=Number(state.adMinutes||5);
+  if(!m || m<1)return;
+  adRemaining=m*60;
+  timerStarted=true;
+  updateCountdown();
+  countdownTimer=setInterval(()=>{
+    adRemaining--;
+    updateCountdown();
+    if(adRemaining<=0){
+      startAds();
+      adRemaining=m*60;
+    }
+  },1000);
+  log('Temporizador publicidad activo cada '+m+' min.');
+}
+function stopAdTimer(){
+  if(adTimer)clearInterval(adTimer);
+  if(countdownTimer)clearInterval(countdownTimer);
+  adTimer=null; countdownTimer=null; timerStarted=false; adRemaining=0;
+  publishTimerStatus(false);
+}
+function togglePause(){
+  const v=isAd?av:mv;
+  if(playing){v.pause();playing=false;log('Pausado.')}
+  else if(v.src)safePlay(v); else playMusic(state.musicIndex||0);
+}
+function unlockAudio(){
+  audioUnlocked=true; mv.muted=false; av.muted=false; overlay.classList.add('hide');
+  const v=isAd?av:mv;
+  if(v.src)safePlay(v); else playMusic(state.musicIndex||0);
+}
+function startFromGesture(){unlockAudio(); if(!timerStarted)startAdTimer()}
+document.addEventListener('click',()=>{if(!audioUnlocked)unlockAudio()},{once:true});
+
+async function handleCommand(cmd){
+  readState();
+  if(!cmd||!cmd.type)return;
+  if(cmd.type==='reload'){applyStateVisuals(); if(!mv.src && state.music.length)playMusic(state.musicIndex||0)}
+  if(cmd.type==='shuffle'){applyStateVisuals(); playMusic(state.musicIndex||0);}
+  if(cmd.type==='play')playMusic(state.musicIndex||0);
+  if(cmd.type==='pause')togglePause();
+  if(cmd.type==='next')nextMusic();
+  if(cmd.type==='adsNow')startAds();
+  if(cmd.type==='timerStart')startAdTimer();
+  if(cmd.type==='timerStop')stopAdTimer();
+  if(cmd.type==='ticker'){applyStateVisuals()}
+  if(cmd.type==='fit'){applyStateVisuals()}
+  if(cmd.type==='clear'){stopAdTimer(); location.reload()}
+}
+window.addEventListener('storage',e=>{if(e.key===STATE_KEY)readState(); if(e.key===COMMAND_KEY){try{handleCommand(JSON.parse(e.newValue||'{}'))}catch(err){}}});
+if(bc)bc.onmessage=e=>handleCommand(e.data);
+function boot(){readState(); if(state.tickerVisible)applyStateVisuals(); if(state.music.length){playMusic(state.musicIndex||0); startAdTimer();} else log('Esperando videos desde admin.html')}
+boot();
+</script>
+</body>
+</html>
